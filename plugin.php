@@ -40,6 +40,7 @@ $staticpress = new static_press(
 	plugin_basename(__FILE__),
 	static_press_admin::static_url(),
 	static_press_admin::static_dir(),
+	static_press_admin::static_symlink(),
 	static_press_admin::remote_get_option()
 	);
 

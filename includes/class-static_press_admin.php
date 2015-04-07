@@ -5,6 +5,7 @@ if ( !class_exists('InputValidator') )
 class static_press_admin {
 	const OPTION_STATIC_URL   = 'StaticPress::static url';
 	const OPTION_STATIC_DIR   = 'StaticPress::static dir';
+	const OPTION_STATIC_SYMLINK = 'StaticPress::static symlink';
 	const OPTION_STATIC_BASIC = 'StaticPress::basic auth';
 	const OPTION_STATIC_TIMEOUT = 'StaticPress::timeout';
 	const OPTION_PAGE = 'static-press';
@@ -20,6 +21,7 @@ class static_press_admin {
 
 	private $static_url;
 	private $static_dir;
+	private $static_symlink;
 	private $basic_auth;
 	private $timeout;
 	private $admin_action;
@@ -29,6 +31,7 @@ class static_press_admin {
 
 		$this->static_url = self::static_url();
 		$this->static_dir = self::static_dir();
+		$this->static_symlink = self::static_symlink();
 		$this->basic_auth = self::basic_auth();
 		$this->timeout    = self::timeout();
 		$this->plugin_basename = $plugin_basename;
@@ -53,6 +56,10 @@ class static_press_admin {
 
 	static public function static_dir(){
 		return get_option(self::OPTION_STATIC_DIR, ABSPATH);
+	}
+
+	static public function static_symlink(){
+		return (bool) get_option(self::OPTION_STATIC_SYMLINK);
 	}
 
 	static public function basic_auth(){
@@ -142,21 +149,23 @@ class static_press_admin {
 		$title = __($this->plugin_name.' Options', self::TEXT_DOMAIN);
 
 		$iv = new InputValidator('POST');
-		$iv->set_rules($nonce_name, 'required');
-		$iv->set_rules('static_url', array('trim','esc_html'));
-		$iv->set_rules('static_dir', array('trim','esc_html'));
-		$iv->set_rules('basic_usr',  array('trim','esc_html'));
-		$iv->set_rules('basic_pwd',  array('trim','esc_html'));
-		$iv->set_rules('timeout',    'numeric');
+		$iv->set_rules($nonce_name,      'required');
+		$iv->set_rules('static_url',     array('trim','esc_html'));
+		$iv->set_rules('static_dir',     array('trim','esc_html'));
+		$iv->set_rules('static_symlink', 'bool');
+		$iv->set_rules('basic_usr',      array('trim','esc_html'));
+		$iv->set_rules('basic_pwd',      array('trim','esc_html'));
+		$iv->set_rules('timeout',        'numeric');
 
 		// Update options
 		if (!is_wp_error($iv->input($nonce_name)) && check_admin_referer($nonce_action, $nonce_name)) {
 			// Get posted options
-			$static_url = $iv->input('static_url');
-			$static_dir = $iv->input('static_dir');
-			$basic_usr  = $iv->input('basic_usr');
-			$basic_pwd  = $iv->input('basic_pwd');
-			$timeout    = $iv->input('timeout');
+			$static_url     = $iv->input('static_url');
+			$static_dir     = $iv->input('static_dir');
+			$static_symlink = $iv->input('static_symlink');
+			$basic_usr      = $iv->input('basic_usr');
+			$basic_pwd      = $iv->input('basic_pwd');
+			$timeout        = $iv->input('timeout');
 			$basic_auth =
 				($basic_usr && $basic_pwd)
 				? base64_encode("{$basic_usr}:{$basic_pwd}")
@@ -165,6 +174,7 @@ class static_press_admin {
 			// Update options
 			update_option(self::OPTION_STATIC_URL, $static_url);
 			update_option(self::OPTION_STATIC_DIR, $static_dir);
+			update_option(self::OPTION_STATIC_SYMLINK, $static_symlink);
 			update_option(self::OPTION_STATIC_BASIC, $basic_auth);
 			update_option(self::OPTION_STATIC_TIMEOUT, $timeout);
 			printf(
@@ -172,13 +182,15 @@ class static_press_admin {
 				empty($err_message) ? __('Done!', self::TEXT_DOMAIN) : $err_message
 				);
 
-			$this->static_url = $static_url;
-			$this->static_dir = $static_dir;
-			$this->basic_auth = $basic_auth;
-			$this->timeout    = $timeout;
+			$this->static_url     = $static_url;
+			$this->static_dir     = $static_dir;
+			$this->static_symlink = $static_symlink;
+			$this->basic_auth     = $basic_auth;
+			$this->timeout        = $timeout;
 
 		}
 		do_action('StaticPress::options_save');
+
 
 		$basic_usr = $basic_pwd = '';
 		if ( $this->basic_auth )
@@ -192,6 +204,7 @@ class static_press_admin {
 		<table class="wp-list-table fixed"><tbody>
 		<?php $this->input_field('static_url', __('Static URL', self::TEXT_DOMAIN), $this->static_url); ?>
 		<?php $this->input_field('static_dir', __('Save DIR (Document root)', self::TEXT_DOMAIN), $this->static_dir); ?>
+		<?php $this->checkbox_field('static_symlink', __('Symlink instead copy', self::TEXT_DOMAIN), $this->static_symlink); ?>
 		<?php $this->input_field('basic_usr', __('(OPTION) BASIC Auth User', self::TEXT_DOMAIN), $basic_usr); ?>
 		<?php $this->input_field('basic_pwd', __('(OPTION) BASIC Auth Password', self::TEXT_DOMAIN), $basic_pwd, 'password'); ?>
 		<?php $this->input_field('timeout', __('(OPTION) Request Timeout', self::TEXT_DOMAIN), $this->timeout); ?>
@@ -207,6 +220,12 @@ class static_press_admin {
 	private function input_field($field, $label, $val, $type = 'text'){
 		$label = sprintf('<th><label for="%1$s">%2$s</label></th>'."\n", $field, $label);
 		$input_field = sprintf('<td><input type="%3$s" name="%1$s" value="%2$s" id="%1$s" size=100 /></td>'."\n", $field, esc_attr($val), $type);
+		echo "<tr>\n{$label}{$input_field}</tr>\n";
+	}
+
+	private function checkbox_field($field, $label, $val){
+		$label = sprintf('<th><label for="%1$s">%2$s</label></th>'."\n", $field, $label);
+		$input_field = sprintf('<td><input type="checkbox" name="%1$s" value="1" id="%1$s" size=100 %2$s /></td>'."\n", $field, $val ? 'checked="checked"' : '');
 		echo "<tr>\n{$label}{$input_field}</tr>\n";
 	}
 

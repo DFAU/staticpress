@@ -15,6 +15,7 @@ class static_press {
 	private $static_home_url;
 	private $url_table;
 	private $static_dir;
+	private $static_symlink;
 	private $remote_get_option;
 
 	private $transient_key = 'static static';
@@ -25,12 +26,12 @@ class static_press {
 		'gz','zip', 'pdf', 'swf',
 		);
 
-	function __construct($plugin_basename, $static_url = '/', $static_dir = '', $remote_get_option = array()){
+	function __construct($plugin_basename, $static_url = '/', $static_dir = '', $static_symlink = false, $remote_get_option = array()){
 		self::$instance = $this;
 
 		$this->plugin_basename = $plugin_basename;
 		$this->url_table = self::url_table();
-		$this->init_params($static_url, $static_dir, $remote_get_option);
+		$this->init_params($static_url, $static_dir, $static_symlink, $remote_get_option);
 
 		add_action('wp_ajax_static_press_init', array($this, 'ajax_init'));
 		add_action('wp_ajax_static_press_fetch', array($this, 'ajax_fetch'));
@@ -42,7 +43,7 @@ class static_press {
 		return $wpdb->prefix.'urls';
 	}
 
-	private function init_params($static_url, $static_dir, $remote_get_option){
+	private function init_params($static_url, $static_dir, $static_symlink, $remote_get_option){
 		global $wpdb;
 
 		$parsed   = parse_url($this->get_site_url());
@@ -50,7 +51,7 @@ class static_press {
 			isset($parsed['scheme'])
 			? $parsed['scheme']
 			: 'http';
-		$host     = 
+		$host     =
 			isset($parsed['host'])
 			? $parsed['host']
 			: (defined('DOMAIN_CURRENT_SITE') ? DOMAIN_CURRENT_SITE : $_SERVER['HTTP_HOST']);
@@ -65,6 +66,8 @@ class static_press {
 			$this->static_dir .= $this->static_home_url;
 		}
 		$this->make_subdirectories($this->static_dir);
+
+		$this->static_symlink = $static_symlink;
 
 		$this->remote_get_option = $remote_get_option;
 
@@ -258,7 +261,7 @@ CREATE TABLE `{$this->url_table}` (
 
 	public function static_url($permalink) {
 		return urldecode(
-			preg_match('/\.[^\.]+?$/i', $permalink) 
+			preg_match('/\.[^\.]+?$/i', $permalink)
 			? $permalink
 			: trailingslashit(trim($permalink)) . 'index.html');
 	}
@@ -404,10 +407,15 @@ CREATE TABLE `{$this->url_table}` (
 				$this->delete_url(array($url));
 				return false;
 			}
-			if ($file_source != $file_dest && (!file_exists($file_dest) || filemtime($file_source) > filemtime($file_dest))) {
-				$file_date = date('Y-m-d h:i:s', filemtime($file_source));
+			if ($file_source != $file_dest && !file_exists($file_dest)) {
 				$this->make_subdirectories($file_dest);
-				copy($file_source, $file_dest);
+				if ($this->static_symlink) {
+					$file_date = '';
+					symlink($file_source, $file_dest);
+				} elseif (filemtime($file_source) > filemtime($file_dest)) {
+					$file_date = date('Y-m-d h:i:s', filemtime($file_source));
+					copy($file_source, $file_dest);
+				}
 			}
 			break;
 		}
@@ -788,7 +796,7 @@ select MAX(P.post_modified) as last_modified, count(P.ID) as count
 
 		$authors = $wpdb->get_results("
 SELECT DISTINCT post_author, COUNT(ID) AS count, MAX(post_modified) AS modified
- FROM {$wpdb->posts} 
+ FROM {$wpdb->posts}
  where post_status = 'publish'
    and post_type in ({$this->post_types})
  group by post_author
@@ -855,7 +863,7 @@ SELECT DISTINCT post_author, COUNT(ID) AS count, MAX(post_modified) AS modified
 			);
 		$count = intval($wpdb->get_var($sql));
 		wp_cache_set('StaticPress::'.$link, $count, 'static_press');
-		
+
 		return $count > 0;
 	}
 
@@ -924,7 +932,7 @@ SELECT DISTINCT post_author, COUNT(ID) AS count, MAX(post_modified) AS modified
 		    (?: [\x00-\x7F]                 # single-byte sequences   0xxxxxxx
 		    |   [\xC0-\xDF][\x80-\xBF]      # double-byte sequences   110xxxxx 10xxxxxx
 		    |   [\xE0-\xEF][\x80-\xBF]{2}   # triple-byte sequences   1110xxxx 10xxxxxx * 2
-		    |   [\xF0-\xF7][\x80-\xBF]{3}   # quadruple-byte sequence 11110xxx 10xxxxxx * 3 
+		    |   [\xF0-\xF7][\x80-\xBF]{3}   # quadruple-byte sequence 11110xxx 10xxxxxx * 3
 		    ){1,100}                        # ...one or more times
 		  )
 		| .                                 # anything else
